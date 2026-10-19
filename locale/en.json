@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DSH with ChatGPT",
+    "description": "Bridge this DSH session to ChatGPT through a local MCP endpoint and a public cloudflared tunnel."
+  }
+}

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="DSH with ChatGPT">
+  <title>DSH with ChatGPT</title>
+  <g>
+    <rect x="4" y="7" width="56" height="40" rx="11" fill="#536dfe"/>
+    <path d="M16 44h13l-1.6 8.6a1.6 1.6 0 0 1-2.6 1L16 44z" fill="#536dfe"/>
+    <path d="M22.6 20.4 31.4 27l-8.8 6.6" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="34.6" y="30.4" width="11" height="3.6" rx="1.8" fill="#ffffff"/>
+  </g>
+</svg>

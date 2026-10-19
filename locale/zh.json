@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DSH 接入 ChatGPT",
+    "description": "通过本地 MCP 端点和公网 cloudflared 隧道，把当前 DSH 会话桥接给 ChatGPT。"
+  }
+}

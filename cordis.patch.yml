@@ -1,0 +1,14 @@
+# Local install-time bundle patch. Values below mirror THIS machine's setup
+# (named tunnel gpt-bridge, hostname dsh.yayin.bond). Replace them with your own
+# tunnel name / hostname before installing — see README "固定域名（可选）".
+- insert:
+    - id: dsh-with-chatgpt
+      name: dsh-with-chatgpt
+      config:
+        workspace: ''
+        maxIterations: 12
+        publicOrigin: ''
+        autoStartTunnel: false
+        tunnel:
+          provider: cloudflared
+          mode: quick
