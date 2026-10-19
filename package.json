@@ -24,7 +24,12 @@
     "locale",
     "icon.svg",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "README.zh-CN.md",
+    "README.fr-FR.md",
+    "README.ru-RU.md",
+    "README.ja-JP.md",
+    "README.ko-KR.md"
   ],
   "dsh": {
     "bundle": {
@@ -34,5 +39,6 @@
       "platform": "web",
       "immediately": true
     }
-  }
+  },
+  "dependencies": {}
 }
