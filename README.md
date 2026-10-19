@@ -105,9 +105,99 @@ ChatGPT 通过 `control_submit` 发回 `PLAN`/`DONE`/`BLOCKED`/`HANDOFF`，DSH A
 | `tunnel.token` / `tunnel.hostname` / `tunnel.tunnelName` / `tunnel.configPath` | `''` | 命名隧道选项：给 token（远程托管 ingress）**或**本地配置文件 + 隧道名（`--config <path> … run <name>`）；hostname 决定上报的 URL |
 | `limits` | 见下 | `maxFileBytes` 128 KiB、`maxDiffBytes` 96 KiB、`maxOutputBytes` 64 KiB、`maxOutputLines` 600、`maxImageBytes` 4 MiB |
 
-### 固定域名（可选）
+### 选隧道：只问自己一个问题
 
-quick 隧道的地址每次重启都会变。想要稳定连接器 URL，一次性创建命名隧道：
+> **「我有自己的域名吗？」**
+
+```text
+        ┌─ 有域名（如 yayin.bond）？ ──→ 走【路线 A】固定域名，一次配置永久用
+        │
+        └─ 没有域名？ ────────────────→ 走【路线 B】quick 隧道，0 配置直接用
+```
+
+---
+
+#### 路线 A：有域名 —— 5 步，一次配置永久用
+
+需要的材料：一个 Cloudflare 托管的域名（免费计划即可）、装好的 `cloudflared`。
+
+> 💡 提示：全程只需做一次。之后无论电脑重启多少次，连接器 URL 永远不变。
+
+1. **登录**（会自动开浏览器，点一下授权）：
+
+   ```powershell
+   cloudflared tunnel login
+   ```
+
+2. **建隧道**（`my-bridge` 是名字，随便起，记住它）：
+
+   ```powershell
+   cloudflared tunnel create my-bridge
+   ```
+
+3. **把域名指到隧道**（把 `dsh.你的域名.com` 换成你想要的子域名）：
+
+   ```powershell
+   cloudflared tunnel route dns my-bridge dsh.你的域名.com
+   ```
+
+4. **写配置文件** `C:\Users\<你的用户名>\.cloudflared\bridge.yml`（UUID 和 json 文件名
+   在第 2 步的输出里，直接复制）：
+
+   ```yaml
+   tunnel: <第2步输出的UUID>
+   credentials-file: C:/Users/<你的用户名>/.cloudflared/<同一个UUID>.json
+   ingress:
+     - hostname: dsh.你的域名.com
+       service: http://127.0.0.1:3780
+     - service: http_status:404
+   ```
+
+5. **启动隧道 + 告诉插件**。先手动测试：
+
+   ```powershell
+   cloudflared tunnel --config "C:/Users/<你的用户名>/.cloudflared/bridge.yml" --no-autoupdate run my-bridge
+   ```
+
+   看到 `Registered tunnel connection` 就成功了。然后改插件配置
+   （`cordis.patch.yml` 或 Settings → ChatGPT 页）：
+
+   ```yaml
+   config:
+     publicOrigin: 'https://dsh.你的域名.com'
+     autoStartTunnel: false        # 隧道刚才已手动跑起来了
+     tunnel:
+       mode: named
+       tunnelName: my-bridge
+       configPath: 'C:/Users/<你的用户名>/.cloudflared/bridge.yml'
+   ```
+
+   ✅ **验收**：浏览器打开 `https://dsh.你的域名.com/dsh-with-chatgpt`，看到
+   `bridge is running` 就成了。想开机自启？对 Agent 说：
+   「把 cloudflared 装成登录自启的计划任务」。
+
+---
+
+#### 路线 B：没有域名 —— 0 配置，直接用
+
+什么都不用买、不用注册。`/chatgpt setup` 会自动启动 quick 隧道，当场给你一个
+`https://xxxx.trycloudflare.com/dsh-with-chatgpt/mcp` 这样的地址。
+
+- ✅ 零配置，装完即用
+- ⚠️ 唯一缺点：**DSH 重启后地址会变**，需要把 ChatGPT 连接器里的 URL 换成新的
+  （配对码重输一次，30 秒的事）
+
+配置什么都不用改，默认就是这条路线。直接跳到上面的「连接 ChatGPT」三步即可。
+
+> 💡 先用路线 B 跑通全流程，哪天想要固定地址了再升级到路线 A —— 两条路线随时可切，
+> 插件配置就是上面那几行 yaml 的差别。
+
+---
+
+### 固定域名（进阶参考）
+
+上面路线 A 的原理性说明（与步骤等价，供排查问题用）：quick 隧道的地址每次重启都会变，
+命名隧道把一个固定子域名 CNAME 到你的隧道，地址就永久不变：
 
 ```powershell
 cloudflared tunnel login
