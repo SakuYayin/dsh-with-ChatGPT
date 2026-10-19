@@ -1,49 +1,39 @@
 # DSH with ChatGPT
 
-**ChatGPT thinks. DSH works.**
+**ChatGPT 负责思考，DSH 负责干活。**
 
-A DSH plugin version of [codex-with-chatgpt](https://github.com/XiaoDuoYa/codex-with-chatgpt):
-ChatGPT web becomes the planning and review layer for one local workspace, while the
-DSH agent keeps execution ownership — edits, shell, git, tests.
+[codex-with-chatgpt](https://github.com/XiaoDuoYa/codex-with-chatgpt) 的 DSH 插件版：
+把 ChatGPT 网页版变成你本地工作区的「规划 + 审查大脑」，DSH Agent 继续保持执行权 ——
+改代码、跑命令、跑测试都由它做，ChatGPT 只读不写。
 
-No API key. No reverse proxy. ChatGPT reaches the workspace through a read-only MCP
-connector over an official cloudflared tunnel, using the ChatGPT subscription you
-already pay for.
+无需 API Key、无需反向代理。ChatGPT 通过一个**只读 MCP 连接器**（cloudflared 官方隧道）
+访问你的工作区，用的就是你已有的 ChatGPT 订阅。
 
-- Workspace is the boundary: every path resolves inside the configured root.
-- The connector is read-only by construction: write / delete / shell / commit tools do not exist.
-- OAuth 2.1 (PKCE S256, dynamic client registration, rotating refresh tokens) plus a
-  one-time pairing code — the only credential a user ever types.
-- Control messages stay under 1 KB: intent, never content. No diffs, no logs, no file bodies.
+- **工作区即边界**：所有路径都被限制在配置的根目录内，junction/软链也逃不出去。
+- **构造上只读**：写 / 删 / shell / commit 类工具根本不存在，不是「禁用」而是「没有」。
+- **OAuth 2.1**（PKCE S256、动态客户端注册、刷新令牌轮换 + 家族吊销）加一次性配对码
+  —— 用户唯一需要输入的凭证。
+- **控制消息永远小于 1 KB**：只传意图，不传内容。没有 diff、没有日志、没有文件正文。
 
-## Install
+## 一键安装（Agent 指令）
 
-```powershell
-dsh plugin install E:\插件\dsh-with-chatgpt
+装好 DSH 后，对 Agent 说这一句话即可完成从克隆到启用的全部步骤：
+
+```text
+用 ChatGPT 规划前先装插件：克隆 https://github.com/SakuYayin/dsh-with-ChatGPT 到本地，
+用 plugin_manager 的 install_bundle 安装该目录，然后运行 /chatgpt setup，
+把打印出来的连接器 URL 和配对码告诉我。
 ```
 
-`E:\插件` can be any folder — install from wherever you cloned this repo:
+或者分步执行（等价）：
 
 ```powershell
 git clone https://github.com/SakuYayin/dsh-with-ChatGPT.git
 dsh plugin install .\dsh-with-ChatGPT
 ```
 
-or through the plugin manager with the absolute bundle directory. The plugin appears as
-**DSH with ChatGPT** in Settings → Plugins and adds a **ChatGPT** settings page.
-
-Requirements: Node.js >= 22, `cloudflared` on `PATH` (or the Windows default
-`C:\Program Files (x86)\cloudflared\cloudflared.exe`).
-
-## Use
-
-```text
-/chatgpt setup        # open the tunnel, mint a pairing code, print the checklist
-/chatgpt status       # same checklist without changing anything
-/chatgpt disconnect   # revoke every token and stop the tunnel
-```
-
-`/chatgpt setup` prints six lines, each derived from live state:
+装完后在 DSH 会话里说 `/chatgpt setup`（或让 Agent 调 `c2c_setup` 工具的 setup 动作），
+它会：启动隧道 → 生成配对码 → 打印下面的自检清单：
 
 ```text
 DSH with ChatGPT
@@ -55,74 +45,69 @@ DSH with ChatGPT
 Ready.
 ```
 
-Then, in ChatGPT:
+## 连接 ChatGPT（一次性，约 2 分钟）
 
-1. Settings → Connectors → Create. Description
-   `Securely connect ChatGPT to the current DSH workspace for planning and review.`,
-   URL = the printed connector URL, Authentication = **OAuth**.
-   (Developer mode may be required: `chatgpt.com/#settings/Security`.)
-2. Open the connector; the pairing page asks for the code printed above.
-3. Paste the Project instructions (also printed by `c2c_setup`) into the ChatGPT Project.
-   Never put the connector URL into the Project instructions — only the connector name.
+1. ChatGPT → **Settings → Connectors → Create**，描述随便填，URL 填 `/chatgpt setup`
+   打印的连接器地址，Authentication 选 **OAuth**
+   （可能需要先在 `chatgpt.com/#settings/Security` 打开 Developer mode）。
+2. 打开该连接器，在配对页输入上面打印的 **8 位配对码**（5 分钟有效，一次性）。
+3. 把 `c2c_setup` 一并打印的 **Project instructions** 粘贴到 ChatGPT Project 设置里。
+   注意：只贴连接器**名称**，不要把连接器 URL 放进 Project instructions。
 
-From then on, ask for `使用 ChatGPT 规划` / `用 ChatGPT 规划`. The agent calls `c2c_start`,
-and the loop runs:
+之后在 DSH 里说 **「用 ChatGPT 规划 <目标>」** 即可，Agent 会调 `c2c_start` 启动循环：
 
 ```text
 INIT → PLAN → EXECUTING → EXECUTED → REVIEW → PLAN | DONE | BLOCKED | ERROR
 ```
 
-ChatGPT sends `PLAN`/`DONE`/`BLOCKED`/`HANDOFF` through `control_submit`; the DSH agent
-drains them with `c2c_inbox`. Iteration budget defaults to 12; on reaching it the agent
-pauses and asks.
+ChatGPT 通过 `control_submit` 发回 `PLAN`/`DONE`/`BLOCKED`/`HANDOFF`，DSH Agent 用
+`c2c_inbox` 取出并继续。迭代预算默认 12 轮，用完会暂停并询问。
 
-## Tools
+## 工具一览
 
-The plugin registers two groups.
+插件注册两组工具。
 
-**Agent tools (DSH side, orchestrating the loop)**
+**Agent 工具（DSH 侧，编排循环）**
 
-| Tool | Purpose |
+| 工具 | 用途 |
 |---|---|
-| `c2c_start` | Start a loop: task id + INIT message + boot prompt |
-| `c2c_inbox` | Drain ChatGPT's PLAN/DONE/BLOCKED/HANDOFF, advance the checkpoint |
-| `c2c_record` | Record the execution (files, tests, sanitized output) |
-| `c2c_executed` | Build the EXECUTED message (counts and test line only) |
-| `c2c_handoff` | Recover a lost ChatGPT conversation with a 1 KB brief |
-| `c2c_session` | Read / set / clear the local checkpoint |
-| `c2c_setup` | Status, tunnel, pairing code, Project instructions |
+| `c2c_start` | 启动循环：生成任务 id + INIT 消息 + boot prompt |
+| `c2c_inbox` | 取回 ChatGPT 的 PLAN/DONE/BLOCKED/HANDOFF，推进检查点 |
+| `c2c_record` | 记录本轮执行（改动文件、测试结果、脱敏输出） |
+| `c2c_executed` | 生成 EXECUTED 控制消息（只含文件数与测试行） |
+| `c2c_handoff` | ChatGPT 会话丢失时用 1 KB 简报恢复 |
+| `c2c_session` | 读取 / 设置 / 清除本地检查点 |
+| `c2c_setup` | 状态、隧道、配对码、Project instructions |
 
-**MCP tools (ChatGPT side, read-only)**
+**MCP 工具（ChatGPT 侧，只读）**
 
-`workspace_info`, `list_directory`, `read_file`, `search_workspace`, `git_status`,
-`git_diff`, `test_status`, `execution_summary`, `execution_output`, `read_image`,
-plus `control_submit` / `control_inbox` for the control plane.
+`workspace_info`、`list_directory`、`read_file`、`search_workspace`、`git_status`、
+`git_diff`、`test_status`、`execution_summary`、`execution_output`、`read_image`，
+外加控制面的 `control_submit` / `control_inbox`。
 
-Sensitive files (`.env*`, keys, SSH material, credentials) are denied by default —
-`.env.example` stays readable. `.c2cignore` adds project-specific rules. Command output
-is sanitized locally before ChatGPT can see it; private keys and tokens are withheld
-entirely, and restricted items appear in the list with no body.
+敏感文件（`.env*`、密钥、SSH 材料、凭据）默认拒绝读取 —— `.env.example` 保持可读。
+`.c2cignore` 可加项目级规则。命令输出在本地脱敏后才对 ChatGPT 可见：私钥和 token
+整体扣留，受限条目在列表中出现但无正文。
 
-## Configuration
+## 配置
 
-| Key | Default | Meaning |
+| 键 | 默认值 | 说明 |
 |---|---|---|
-| `enabled` | `true` | Turn the plugin off without uninstalling |
-| `workspace` | `''` | Workspace root; empty = the session working directory |
-| `prefix` | `/dsh-with-chatgpt` | HTTP mount point, kept relative so the endpoint survives a port change |
-| `connectorName` | `''` | ChatGPT connector label; empty = `DSH with ChatGPT (<workspace>)` |
-| `maxIterations` | `12` | Soft loop budget before pausing for the user |
-| `autoStartTunnel` | `false` | Start the public tunnel with the bridge |
-| `tunnel` | `quick` | `quick` (`*.trycloudflare.com`, changes on restart) or `named` |
-| `cloudflaredPath` | `''` | Explicit binary path |
-| `publicOrigin` | `''` | Fixed public origin (e.g. `https://dsh.example.com`) when the tunnel is externally managed; the bridge reports this URL instead of spawning its own child |
-| `tunnel.token` / `tunnel.hostname` / `tunnel.tunnelName` / `tunnel.configPath` | `''` | Named-tunnel options: a token (remote-managed ingress) **or** a local config file + tunnel name (`--config <path> … run <name>`); hostname sets the reported URL |
-| `limits` | see below | `maxFileBytes` 128 KiB, `maxDiffBytes` 96 KiB, `maxOutputBytes` 64 KiB, `maxOutputLines` 600, `maxImageBytes` 4 MiB |
+| `enabled` | `true` | 不卸载的前提下关闭插件 |
+| `workspace` | `''` | 工作区根目录；空 = 会话工作目录 |
+| `prefix` | `/dsh-with-chatgpt` | HTTP 挂载点，保持相对路径以便端口变化后端点不变 |
+| `connectorName` | `''` | ChatGPT 连接器标签；空 = `DSH with ChatGPT (<workspace>)` |
+| `maxIterations` | `12` | 软性循环预算，用完暂停询问用户 |
+| `autoStartTunnel` | `false` | 随桥接一起启动公网隧道 |
+| `tunnel` | `quick` | `quick`（`*.trycloudflare.com`，每次重启会变）或 `named` |
+| `cloudflaredPath` | `''` | 显式二进制路径 |
+| `publicOrigin` | `''` | 隧道由外部托管时的固定公网地址（如 `https://dsh.example.com`），桥接直接上报该 URL |
+| `tunnel.token` / `tunnel.hostname` / `tunnel.tunnelName` / `tunnel.configPath` | `''` | 命名隧道选项：给 token（远程托管 ingress）**或**本地配置文件 + 隧道名（`--config <path> … run <name>`）；hostname 决定上报的 URL |
+| `limits` | 见下 | `maxFileBytes` 128 KiB、`maxDiffBytes` 96 KiB、`maxOutputBytes` 64 KiB、`maxOutputLines` 600、`maxImageBytes` 4 MiB |
 
-### Fixed domain (optional)
+### 固定域名（可选）
 
-A quick tunnel URL changes every restart. For a stable connector URL, create a named
-tunnel once:
+quick 隧道的地址每次重启都会变。想要稳定连接器 URL，一次性创建命名隧道：
 
 ```powershell
 cloudflared tunnel login
@@ -130,7 +115,7 @@ cloudflared tunnel create my-bridge
 cloudflared tunnel route dns my-bridge dsh.example.com
 ```
 
-Write `~/.cloudflared/bridge.yml`:
+写 `~/.cloudflared/bridge.yml`：
 
 ```yaml
 tunnel: <tunnel-uuid>
@@ -141,7 +126,7 @@ ingress:
   - service: http_status:404
 ```
 
-Run it (e.g. a scheduled task at logon), then set in `cordis.patch.yml`:
+把它跑起来（比如登录时启动的计划任务），然后在 `cordis.patch.yml` 里配置：
 
 ```yaml
 - insert:
@@ -149,47 +134,40 @@ Run it (e.g. a scheduled task at logon), then set in `cordis.patch.yml`:
       name: dsh-with-chatgpt
       config:
         publicOrigin: 'https://dsh.example.com'
-        autoStartTunnel: false   # the external supervisor owns the tunnel
+        autoStartTunnel: false   # 隧道由外部守护进程负责
         tunnel:
           mode: named
           tunnelName: my-bridge
           configPath: 'C:/Users/<you>/.cloudflared/bridge.yml'
 ```
 
-State lives in `$DSH_HOME/dsh-with-chatgpt` (mode 0700, atomic writes), never in the
-workspace: OAuth clients and hashed tokens, the control journal, execution records and
-sanitized output. Deleting that directory is a full reset.
+## 与原版的差异
 
-## Differences from the original
+原项目（codex-with-chatgpt）是 Node CLI + Codex Skill，靠「计算机操作」往 ChatGPT
+网页里打 `[C2C]` 消息。DSH 没有浏览器自动化层，所以本插件把那一半换成了两个控制面
+MCP 工具：
 
-The upstream project ships a Node CLI plus a Codex Skill, and drives the ChatGPT side by
-typing `[C2C]` messages into the web UI. DSH has no browser-automation surface, so this
-plugin replaces that half with two control-plane MCP tools:
-
-| Upstream | Here |
+| 原版 | 本插件 |
 |---|---|
-| `c2c setup` / `c2c status` CLI | `/chatgpt` command + settings page + `c2c_setup` tool |
-| Codex Skill file | `systemPrompt` section installed by the plugin |
-| "Computer Use" types into ChatGPT | `control_submit` / `control_inbox` MCP tools |
-| `c2c record` / `session --json` | `c2c_record`, `c2c_session` tools + JSONL journal |
-| Desktop status screen | Settings → **ChatGPT** panel (React slot, DSH theme tokens) |
+| `c2c setup` / `c2c status` CLI | `/chatgpt` 命令 + 设置页 + `c2c_setup` 工具 |
+| Codex Skill 文件 | 插件安装的 `systemPrompt` 分区 |
+| 「Computer Use」往 ChatGPT 打字 | `control_submit` / `control_inbox` MCP 工具 |
+| `c2c record` / `session --json` | `c2c_record`、`c2c_session` 工具 + JSONL 日志 |
+| 桌面状态屏 | Settings → **ChatGPT** 面板（React slot，DSH 主题 token） |
 
-Same protocol, same message format, same security posture, same 13-rule boot prompt —
-so the ChatGPT half is unchanged and the docs upstream still apply.
+协议、消息格式、安全姿态、13 条 boot prompt 完全一致 —— ChatGPT 那一半无需改动，
+原版文档照样适用。
 
-## Security
+## 安全
 
-- The MCP endpoint always requires an OAuth bearer token, because the tunnel makes it
-  publicly reachable.
-- The state API (`/api/*`) answers loopback only, and additionally refuses any request
-  carrying tunnel headers, a non-loopback `Host`, or a cross-site `Origin` — a
-  `cloudflared` request also arrives from a loopback socket, so the socket check alone
-  would not be enough.
-- Pairing codes are 8 symbols, 5-minute TTL, one-time, 5 attempts, rate limited per IP.
-- Refresh-token replay revokes the whole token family.
-- Path containment uses `realpathSync.native` so NTFS junctions cannot escape the root.
+- MCP 端点始终要求 OAuth bearer token —— 因为隧道让它公网可达。
+- 状态 API（`/api/*`）只回答回环请求，且额外拒绝任何带隧道头、非回环 `Host` 或跨站
+  `Origin` 的请求 —— `cloudflared` 的请求同样来自回环 socket，仅查 socket 不够。
+- 配对码 8 位符号、5 分钟 TTL、一次性、5 次尝试、按 IP 限速。
+- 刷新令牌重放会吊销整个令牌家族。
+- 路径围栏使用 `realpathSync.native`，NTFS junction 无法逃逸。
 
-## Tests
+## 测试
 
 ```powershell
 node --test --experimental-test-isolation=none tests/auth.test.js
@@ -199,7 +177,9 @@ node --test --experimental-test-isolation=none tests/workspace.test.js
 node --test --experimental-test-isolation=none tests/http.test.js
 ```
 
-`--experimental-test-isolation=none` is only needed inside a sandbox that forbids piped
-child stdio; a normal shell runs plain `node --test` fine.
+`--experimental-test-isolation=none` 只在禁止管道子进程 stdio 的沙箱里需要；普通
+shell 直接 `node --test` 即可。
 
-MIT licensed, like the original.
+## 许可
+
+MIT，与原版一致。
