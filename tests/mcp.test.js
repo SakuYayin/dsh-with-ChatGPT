@@ -224,11 +224,22 @@ test('read-only tool descriptions say so and control_submit carries the exact re
     assert.match(byName.get(name).description, /read-only/i, `${name} must state it is read-only`);
   }
   const controlSubmit = byName.get('control_submit');
+  // The contract sentence is the tool's first line: it stays verbatim so
+  // existing callers keep recognising the tool, and the shape guide follows it.
   assert.ok(
     controlSubmit.description.includes(
-      'Control plane only. Does not modify the workspace. Post one `[C2C]` control message (INIT/PLAN/DONE/BLOCKED/HANDOFF).',
+      'Control plane only. Does not modify the workspace. Post one `[C2C]` control message back to the local DSH harness.',
     ),
     'control_submit description must carry the contract sentence verbatim',
+  );
+  // Regression guard for the field failure: ChatGPT kept returning BAD_HEADER
+  // because it wrote markdown (`**STATE:**`) and inline values. The description
+  // must show the literal shape it is expected to emit.
+  assert.ok(controlSubmit.description.includes('[C2C]'), 'control_submit must show the literal [C2C] header');
+  assert.ok(controlSubmit.description.includes('STATE: PLAN'), 'control_submit must show a STATE header line');
+  assert.ok(
+    controlSubmit.description.includes('16 KiB'),
+    'control_submit must state the byte budget',
   );
 });
 
@@ -481,7 +492,7 @@ test('control_submit happy path validates and forwards the [C2C] message', async
   assert.equal(calls.find((entry) => entry.name === 'submit').args, message);
 });
 
-test('control_submit enforces the [C2C] marker, known states and the 1 KiB cap', async () => {
+test('control_submit enforces the [C2C] marker, known states and the 16 KiB cap', async () => {
   const { mcp, calls } = makeMcp();
   const noMarker = await rpc(mcp, 'tools/call', { name: 'control_submit', arguments: { message: 'hello' } });
   assert.equal(noMarker.error.code, -32602);
@@ -491,12 +502,18 @@ test('control_submit enforces the [C2C] marker, known states and the 1 KiB cap',
   assert.equal(badState.error.code, -32602);
   assert.match(badState.error.message, /PARTY/);
 
-  const tooBig = `[C2C]\nSTATE: PLAN\n\n${'x'.repeat(2048)}`;
+  // A real multi-thread plan is a few kilobytes; the old 1 KiB cap rejected it.
+  const realistic = `[C2C]\nSTATE: PLAN\nTASK_ID: c2c_abcd\nITERATION: 0\n\nGOAL:\nx\n\nACTIONS:\n${'1. do a thing with a file path\n'.repeat(150)}\nTESTS:\ny\n\nSUCCESS_CRITERIA:\nz`;
+  const accepted = await callTool(mcp, 'control_submit', { message: realistic });
+  assert.equal(accepted.isError, undefined, 'a multi-KB plan must be accepted');
+  assert.equal(calls.filter((entry) => entry.name === 'submit').length, 1);
+
+  const tooBig = `[C2C]\nSTATE: PLAN\n\n${'x'.repeat(20 * 1024)}`;
   const oversized = await rpc(mcp, 'tools/call', { name: 'control_submit', arguments: { message: tooBig } });
   assert.equal(oversized.error.code, -32602);
-  assert.match(oversized.error.message, /1024/);
+  assert.match(oversized.error.message, /16384/);
 
-  assert.equal(calls.filter((entry) => entry.name === 'submit').length, 0, 'no invalid message may reach the control plane');
+  assert.equal(calls.filter((entry) => entry.name === 'submit').length, 1, 'the oversized message must not reach the control plane');
 });
 
 test('control_submit accepts a lower-case marker', async () => {
