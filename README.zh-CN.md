@@ -19,6 +19,36 @@
 > [Français](README.fr-FR.md) · [Русский](README.ru-RU.md) ·
 > [日本語](README.ja-JP.md) · [한국어](README.ko-KR.md)
 
+## 授权（付费插件）
+
+这个插件是**收费**的。没有激活时它什么都不做：ChatGPT 那侧的工具不会注册，系统提示分区不会注入，
+MCP 端点直接返回 `402 license_required`，隧道也不会启动。
+
+打开 **设置 → ChatGPT**，粘贴你的密钥即可。激活后立刻生效，不需要重启 DSH。
+
+校验方式，以及为什么不容易被绕过：
+
+| 环节 | 机制 |
+| --- | --- |
+| 密钥校验 | `lib/license.js` 里只编译进了每个合法密钥的 `scrypt` 哈希（N=32768, r=8, p=1）。源码中不存在明文密钥，读到文件也拿不到可用信息。 |
+| 本地记录 | 状态文件只存授权编号、版本、激活时间 —— 从不存密钥本身。 |
+| 机器绑定 | 记录带一个 HMAC-SHA256 完整性标签，密钥材料由「主机名 + 平台 + 每台机器随机 installId」派生。把状态目录拷到另一台机器会得到 `MACHINE_MISMATCH`。 |
+| 篡改检测 | 手改状态文件里的版本或授权编号会让标签失配（`RECORD_TAMPERED`）。即使连标签一起伪造，未知哈希仍然过不了白名单校验（`UNKNOWN_KEY`）—— 两道检查互相独立。 |
+| 猜解成本 | 全部比较都是常量时间；连续失败从第 3 次起指数退避（1s、2s、4s… 上限 1 小时）。 |
+| 签名密钥 | 按客户签发的密钥使用 Ed25519：插件只内置**公钥**，许可证是离线用 `tools/mint-license.mjs` 签出的 `DSH1.<payload>.<signature>`。 |
+
+四道限制彼此独立：只改 MCP 那道，工具注册仍然是关的；工具那道改完，提示与隧道仍然关着。
+真要彻底去掉授权，得同时改四处加一个记录校验器。
+
+卖家侧工具（不随客户端分发）：
+
+```bash
+node tools/mint-license.mjs --hash '你的密钥'        # 把密钥加入白名单
+node tools/mint-license.mjs --init                   # 生成 Ed25519 密钥对
+node tools/mint-license.mjs --mint --name ACME --days 365
+node tools/mint-license.mjs --verify 'DSH1....'
+```
+
 ## 一键安装（Agent 指令）
 
 装好 DSH 后，对 Agent 说这一句话即可完成从克隆到启用的全部步骤：

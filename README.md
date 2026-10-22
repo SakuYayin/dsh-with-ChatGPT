@@ -23,6 +23,39 @@ already pay for.
 > [Français](README.fr-FR.md) · [Русский](README.ru-RU.md) ·
 > [日本語](README.ja-JP.md) · [한국어](README.ko-KR.md)
 
+## Licensing
+
+This plugin is **commercial**. It does nothing until it is activated on the machine
+that runs it: the ChatGPT tools are not registered, no system-prompt section is
+installed, the MCP endpoint answers `402 license_required`, and the tunnel stays down.
+
+Open **Settings → ChatGPT** and paste your key. Activation then unlocks everything
+immediately — no DSH restart.
+
+How the check works, and why it holds up:
+
+| Layer | Mechanism |
+| --- | --- |
+| Key verification | Only a `scrypt` hash (N=32768, r=8, p=1) of each valid key is compiled into `lib/license.js`. No plaintext key exists in the source, so reading the file reveals nothing usable. |
+| Durable record | The state file stores the license id, edition and activation time — never the key. |
+| Machine binding | The record carries an HMAC-SHA256 tag keyed by hostname + platform + a per-install random id. Copying the state directory to another machine fails with `MACHINE_MISMATCH`. |
+| Tamper detection | Editing the edition or the key id in the state file breaks the tag (`RECORD_TAMPERED`). Forging a tag with an unknown key hash still fails (`UNKNOWN_KEY`), because the allowlist check is independent of the tag. |
+| Guess resistance | Every comparison is constant-time, and failed attempts arm an exponential lockout (1 s, 2 s, 4 s … capped at 1 h) after the third try. |
+| Signed keys | For per-customer keys the plugin ships only an Ed25519 **public** key; licenses are `DSH1.<payload>.<signature>` blobs minted offline with `tools/mint-license.mjs`. |
+
+The gates are deliberately independent: patching the MCP check leaves the tool
+registration closed, patching that leaves the prompt and tunnel closed. Removing the
+license requirement properly means editing four places plus the record verifier.
+
+Vendor tooling (never shipped to customers):
+
+```bash
+node tools/mint-license.mjs --hash 'your-key'      # add a key to the allowlist
+node tools/mint-license.mjs --init                 # generate an Ed25519 key pair
+node tools/mint-license.mjs --mint --name ACME --days 365
+node tools/mint-license.mjs --verify 'DSH1....'
+```
+
 ## One-command install (Agent instruction)
 
 Once DSH is installed, say this single line to your agent — it covers everything from

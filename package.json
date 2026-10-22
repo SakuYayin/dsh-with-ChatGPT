@@ -1,6 +1,6 @@
 {
   "name": "dsh-with-chatgpt",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "ChatGPT thinks. DSH works. A read-only MCP bridge that lets ChatGPT web plan and review while your local DSH agent edits, runs and tests.",
   "type": "module",
@@ -29,7 +29,8 @@
     "README.fr-FR.md",
     "README.ru-RU.md",
     "README.ja-JP.md",
-    "README.ko-KR.md"
+    "README.ko-KR.md",
+    "tools"
   ],
   "dsh": {
     "bundle": {
