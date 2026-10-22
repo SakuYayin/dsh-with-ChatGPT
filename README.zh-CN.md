@@ -21,21 +21,30 @@
 
 ## 授权（付费插件）
 
-这个插件是**收费**的。没有激活时它什么都不做：ChatGPT 那侧的工具不会注册，系统提示分区不会注入，
+这个插件是**收费**的，采用**一次性买断**：买一次永久可用，一个密钥最多绑定 **2 台机器**。
+没有激活时它什么都不做：ChatGPT 那侧的工具不会注册，系统提示分区不会注入，
 MCP 端点直接返回 `402 license_required`，隧道也不会启动。
 
 打开 **设置 → ChatGPT**，粘贴你的密钥即可。激活后立刻生效，不需要重启 DSH。
+面板上会显示这台机器的**机器码**（`DSH-xxxx-xxxx-xxxx-xxxx`）—— 把它发给卖家，
+签发的密钥才会写进你的硬件。在输入框里运行 `/license` 也能看到同一个码。
 
 校验方式，以及为什么不容易被绕过：
 
 | 环节 | 机制 |
 | --- | --- |
 | 密钥校验 | `lib/license.js` 里只编译进了每个合法密钥的 `scrypt` 哈希（N=32768, r=8, p=1）。源码中不存在明文密钥，读到文件也拿不到可用信息。 |
-| 本地记录 | 状态文件只存授权编号、版本、激活时间 —— 从不存密钥本身。 |
-| 机器绑定 | 记录带一个 HMAC-SHA256 完整性标签，密钥材料由「主机名 + 平台 + 每台机器随机 installId」派生。把状态目录拷到另一台机器会得到 `MACHINE_MISMATCH`。 |
-| 篡改检测 | 手改状态文件里的版本或授权编号会让标签失配（`RECORD_TAMPERED`）。即使连标签一起伪造，未知哈希仍然过不了白名单校验（`UNKNOWN_KEY`）—— 两道检查互相独立。 |
+| 本地记录 | 状态文件只存授权编号、版本、客户名、激活时间 —— 从不存密钥本身。 |
+| 机器绑定 | 许可证里写明它允许的机器码；本地记录再带一个 HMAC-SHA256 完整性标签，密钥材料由「硬件码 + 主机名 + 平台 + 每台机器随机 installId」派生。把状态目录**或**许可证拷贝到另一台机器都会得到 `MACHINE_MISMATCH`。 |
+| 席位上限 | 签发工具拒绝为超过 `MAX_SEATS = 2` 个机器码出证，读取时也会截断到两台。上限在**签发时**强制：离线插件无法统计它从未听说过的机器，第三台机器靠机器码绑定来拦。 |
+| 篡改检测 | 手改状态文件里的版本、客户名、席位或授权编号会让标签失配（`RECORD_TAMPERED`）。即使连标签一起伪造，未知哈希仍然过不了白名单校验（`UNKNOWN_KEY`）—— 两道检查互相独立。 |
 | 猜解成本 | 全部比较都是常量时间；连续失败从第 3 次起指数退避（1s、2s、4s… 上限 1 小时）。 |
 | 签名密钥 | 按客户签发的密钥使用 Ed25519：插件只内置**公钥**，许可证是离线用 `tools/mint-license.mjs` 签出的 `DSH1.<payload>.<signature>`。 |
+
+机器码由 Windows `MachineGuid`、物理网卡 MAC 和（真实时才用）SMBIOS UUID 组合而成。
+未被主板厂商烧录的占位 UUID（`03000200-0400-0500-0006-000700080009`）、本地管理位为 1 的
+MAC、已知虚拟网卡前缀都会被过滤掉 —— 否则同一批主板会共用一个机器码。另外由单一信号
+派生出两个备用码，换网卡或重装系统时可以据此重新签发，不必重新购买。
 
 四道限制彼此独立：只改 MCP 那道，工具注册仍然是关的；工具那道改完，提示与隧道仍然关着。
 真要彻底去掉授权，得同时改四处加一个记录校验器。
@@ -43,11 +52,15 @@ MCP 端点直接返回 `402 license_required`，隧道也不会启动。
 卖家侧工具（不随客户端分发）：
 
 ```bash
-node tools/mint-license.mjs --hash '你的密钥'        # 把密钥加入白名单
-node tools/mint-license.mjs --init                   # 生成 Ed25519 密钥对
-node tools/mint-license.mjs --mint --name ACME --days 365
-node tools/mint-license.mjs --verify 'DSH1....'
+node tools/mint-license.mjs --machine                             # 本机机器码
+node tools/mint-license.mjs --hash '你的密钥'                      # 把密钥加入白名单
+node tools/mint-license.mjs --init                                # 生成 Ed25519 密钥对
+node tools/mint-license.mjs --mint --name ACME --machine DSH-258c-e814-a68e-a9bd
+node tools/mint-license.mjs --inspect 'DSH1....'                  # 查客户与席位
+node tools/mint-license.mjs --verify  'DSH1....'
 ```
+
+`--mint` 默认签永久授权；只有试用或订阅才加 `--days N`，买断的授权不应带到期时间。
 
 ## 一键安装（Agent 指令）
 

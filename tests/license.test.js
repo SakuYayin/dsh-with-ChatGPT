@@ -152,7 +152,11 @@ test('an unknown hash smuggled into the record does not activate', async () => {
     { N: 32768, r: 8, p: 1, maxmem: 128 * 1024 * 1024 });
   const fields = store.state.license;
   store.state.license.tag = createHmac('sha256', key).update(
-    [fields.v, fields.kind, fields.entryId, fields.edition, fields.machine, fields.activatedAt].join('|'), 'utf8',
+    [
+      fields.v, fields.kind, fields.entryId, fields.edition, fields.machine, fields.activatedAt,
+      String(fields.seats ?? ''), String(fields.customer ?? ''),
+    ].join('|'),
+    'utf8',
   ).digest('hex');
   const patched = new LicenseManager({ store });
   await patched.init();

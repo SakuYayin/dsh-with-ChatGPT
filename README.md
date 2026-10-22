@@ -25,23 +25,35 @@ already pay for.
 
 ## Licensing
 
-This plugin is **commercial**. It does nothing until it is activated on the machine
-that runs it: the ChatGPT tools are not registered, no system-prompt section is
-installed, the MCP endpoint answers `402 license_required`, and the tunnel stays down.
+This plugin is **commercial**, sold as a **one-off purchase**: you buy once, the
+licence never expires, and one key covers up to **two machines**. It does nothing
+until it is activated on the machine that runs it: the ChatGPT tools are not
+registered, no system-prompt section is installed, the MCP endpoint answers
+`402 license_required`, and the tunnel stays down.
 
 Open **Settings → ChatGPT** and paste your key. Activation then unlocks everything
-immediately — no DSH restart.
+immediately — no DSH restart. The panel shows this PC's **machine code**
+(`DSH-xxxx-xxxx-xxxx-xxxx`); that code is what you send the seller, so the issued key
+names your hardware. `/license` prints the same code from the composer.
 
 How the check works, and why it holds up:
 
 | Layer | Mechanism |
 | --- | --- |
 | Key verification | Only a `scrypt` hash (N=32768, r=8, p=1) of each valid key is compiled into `lib/license.js`. No plaintext key exists in the source, so reading the file reveals nothing usable. |
-| Durable record | The state file stores the license id, edition and activation time — never the key. |
-| Machine binding | The record carries an HMAC-SHA256 tag keyed by hostname + platform + a per-install random id. Copying the state directory to another machine fails with `MACHINE_MISMATCH`. |
-| Tamper detection | Editing the edition or the key id in the state file breaks the tag (`RECORD_TAMPERED`). Forging a tag with an unknown key hash still fails (`UNKNOWN_KEY`), because the allowlist check is independent of the tag. |
+| Durable record | The state file stores the license id, edition, customer and activation time — never the key. |
+| Machine binding | The licence payload names the machine codes it is valid for, and the stored record carries an HMAC-SHA256 tag keyed by that hardware code + hostname + platform + a per-install random id. Copying the state directory *or* the licence blob to another machine fails with `MACHINE_MISMATCH`. |
+| Seat limit | The seller tool refuses to issue a licence naming more than `MAX_SEATS = 2` machine codes, and a payload is truncated to two on read. The limit is enforced **at issue time**: an offline plugin cannot count activations on machines it never hears from, so a copied key on a third PC is what the machine-code binding catches. |
+| Tamper detection | Editing the edition, customer, seat count or key id in the state file breaks the tag (`RECORD_TAMPERED`). Forging a tag with an unknown key hash still fails (`UNKNOWN_KEY`), because the allowlist check is independent of the tag. |
 | Guess resistance | Every comparison is constant-time, and failed attempts arm an exponential lockout (1 s, 2 s, 4 s … capped at 1 h) after the third try. |
 | Signed keys | For per-customer keys the plugin ships only an Ed25519 **public** key; licenses are `DSH1.<payload>.<signature>` blobs minted offline with `tools/mint-license.mjs`. |
+
+The machine code combines the Windows `MachineGuid` with the physical MAC addresses
+and, when it is real, the SMBIOS UUID. Placeholder values that unfused mainboards
+report (`03000200-0400-0500-0006-000700080009`), locally administered MACs and known
+virtual OUI ranges are filtered out — otherwise every board from one batch would share
+a code. Two recovery codes are derived from a single signal each, so replacing a
+network card or reinstalling Windows can be re-issued without buying again.
 
 The gates are deliberately independent: patching the MCP check leaves the tool
 registration closed, patching that leaves the prompt and tunnel closed. Removing the
@@ -50,11 +62,16 @@ license requirement properly means editing four places plus the record verifier.
 Vendor tooling (never shipped to customers):
 
 ```bash
-node tools/mint-license.mjs --hash 'your-key'      # add a key to the allowlist
-node tools/mint-license.mjs --init                 # generate an Ed25519 key pair
-node tools/mint-license.mjs --mint --name ACME --days 365
-node tools/mint-license.mjs --verify 'DSH1....'
+node tools/mint-license.mjs --machine                              # this PC's code
+node tools/mint-license.mjs --hash 'your-key'                      # add a key to the allowlist
+node tools/mint-license.mjs --init                                 # generate an Ed25519 key pair
+node tools/mint-license.mjs --mint --name ACME --machine DSH-258c-e814-a68e-a9bd
+node tools/mint-license.mjs --inspect 'DSH1....'                   # who, how many seats
+node tools/mint-license.mjs --verify  'DSH1....'
 ```
+
+`--mint` defaults to a perpetual licence. Pass `--days N` only for a trial or a
+subscription; a one-off purchase must not carry an expiry.
 
 ## One-command install (Agent instruction)
 
