@@ -57,32 +57,42 @@ test('panel: any tunnel header alone is refused', () => {
 });
 
 test('panel: cross-site sec-fetch-site is refused', () => {
-  const req = fakeReq({ headers: { host: '127.0.0.1:43120', 'sec-fetch-site': 'cross-site' } });
+  const req = fakeReq({ headers: { host: '127.0.0.1:3780', 'sec-fetch-site': 'cross-site' } });
   assert.equal(isPanelRequest(req), false);
 });
 
-test('panel: same-site sec-fetch-site is refused', () => {
-  const req = fakeReq({ headers: { host: '127.0.0.1:43120', 'sec-fetch-site': 'same-site' } });
-  assert.equal(isPanelRequest(req), false);
-});
-
-test('panel: same-origin sec-fetch-site passes', () => {
-  const req = fakeReq({ headers: { host: '127.0.0.1:43120', 'sec-fetch-site': 'same-origin' } });
+test('panel: same-site sec-fetch-site passes (panel and bridge differ only in port)', () => {
+  // The panel is served by the DSH Web GUI on 43120 while the bridge listens on
+  // 3780: same scheme, same loopback host, different port ⇒ browsers report
+  // `same-site`, which is exactly the legitimate case.
+  const req = fakeReq({
+    headers: { host: '127.0.0.1:3780', origin: 'http://127.0.0.1:43120', 'sec-fetch-site': 'same-site' },
+  });
   assert.equal(isPanelRequest(req), true);
 });
 
-test('panel: mismatched Origin is refused (CSRF)', () => {
-  const req = fakeReq({ headers: { host: '127.0.0.1:43120', origin: 'https://evil.example' } });
+test('panel: same-origin sec-fetch-site passes', () => {
+  const req = fakeReq({ headers: { host: '127.0.0.1:3780', 'sec-fetch-site': 'same-origin' } });
+  assert.equal(isPanelRequest(req), true);
+});
+
+test('panel: non-loopback Origin is refused (CSRF)', () => {
+  const req = fakeReq({ headers: { host: '127.0.0.1:3780', origin: 'https://evil.example' } });
   assert.equal(isPanelRequest(req), false);
 });
 
-test('panel: matching same-origin Origin passes', () => {
-  const req = fakeReq({ headers: { host: '127.0.0.1:43120', origin: 'http://127.0.0.1:43120' } });
+test('panel: cross-origin from another local port passes (the settings panel)', () => {
+  const req = fakeReq({ headers: { host: '127.0.0.1:3780', origin: 'http://127.0.0.1:43120' } });
+  assert.equal(isPanelRequest(req), true);
+});
+
+test('panel: cross-origin from a localhost spelling of the panel passes', () => {
+  const req = fakeReq({ headers: { host: '127.0.0.1:3780', origin: 'http://localhost:43120' } });
   assert.equal(isPanelRequest(req), true);
 });
 
 test('panel: unparseable Origin is refused', () => {
-  const req = fakeReq({ headers: { host: '127.0.0.1:43120', origin: 'not a url' } });
+  const req = fakeReq({ headers: { host: '127.0.0.1:3780', origin: 'not a url' } });
   assert.equal(isPanelRequest(req), false);
 });
 
@@ -92,6 +102,6 @@ test('panel: empty Host is refused', () => {
 });
 
 test('panel: uppercase Host and Origin are normalized', () => {
-  const req = fakeReq({ headers: { host: 'LOCALHOST:43120', origin: 'HTTP://LOCALHOST:43120' } });
+  const req = fakeReq({ headers: { host: 'LOCALHOST:3780', origin: 'HTTP://LOCALHOST:43120' } });
   assert.equal(isPanelRequest(req), true);
 });
