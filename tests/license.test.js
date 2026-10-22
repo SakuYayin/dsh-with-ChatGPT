@@ -252,3 +252,42 @@ test('every reason code has a sentence', async () => {
   }
   assert.equal(reasonText('nonsense'), 'license check failed');
 });
+
+test('a record holding only a failure counter reads as NOT_ACTIVATED', async () => {
+  // Happens on a machine that was never activated but did have keys tried on it.
+  // Reporting RECORD_VERSION there would be a lie, and worse, it would look like a
+  // compatibility problem instead of a wrong key.
+  const store = fakeStore({ license: { failures: 2, lastFailureAt: Date.now() } });
+  const manager = new LicenseManager({ store });
+  await manager.init();
+  assert.equal(manager.active, false);
+  assert.equal(manager.reason, 'NOT_ACTIVATED');
+  assert.equal(manager.status().attemptsLeft, 3);
+});
+
+test('a lockout survives a restart', async () => {
+  // Restarting the host must not hand out a fresh guess budget.
+  const store = fakeStore();
+  const first = new LicenseManager({ store });
+  await first.init();
+  for (let attempt = 1; attempt <= 3; attempt += 1) await first.activate('wrong-key-here');
+  assert.ok(first.lockedUntil > Date.now());
+
+  const afterRestart = new LicenseManager({ store });
+  await afterRestart.init();
+  assert.ok(afterRestart.lockedUntil > Date.now(), 'the lockout must be restored from disk');
+  assert.equal(afterRestart.status().lockedUntil !== null, true);
+  const attempt = await afterRestart.activate(GOOD_KEY);
+  assert.equal(attempt.ok, false);
+  assert.equal(attempt.reason, 'LOCKED');
+});
+
+test('an expired lockout does not block a correct key forever', async () => {
+  const longAgo = Date.now() - 3 * 60 * 60 * 1000;
+  const store = fakeStore({ license: { failures: 3, lastFailureAt: longAgo } });
+  const manager = new LicenseManager({ store });
+  await manager.init();
+  assert.equal(manager.status().lockedUntil, null, 'a stale lockout must have expired');
+  const result = await manager.activate(GOOD_KEY);
+  assert.equal(result.ok, true);
+});
